@@ -3,17 +3,17 @@
    exec ghci
    --resolver lts-9.3 
    --package csv
-   --package sqlite
+   --package text
+   --package direct-sqlite
 -}
-
-{-# LANGUAGE OverloadedStrings #-}
 
 module CSVToSQLite where
 
 import Text.CSV
-import Database.SQL
+import Database.SQLite3
+import Data.Text (pack, unpack)
 import Data.List (intercalate)
-import Data.Text (Text)
+import Text.Read (readMaybe)
 
 import Debug.Trace
 
@@ -91,7 +91,7 @@ convertCSVFileToSQL inFileName outFileName tableName fields = do
 -- Returns "Successful" if successful,
 -- error message otherwise.
 convertCSVToSQL :: String
-                -> FilePath
+                -> String
                 -> [String]
                 -> CSV
                 -> IO ()
@@ -100,58 +100,68 @@ convertCSVToSQL tableName outFileName fields records =
   -- matches the number of fields
   if nFieldsInFile == nFieldsInFields then do
     -- Open a connection
-    -- conn <- open outFileName
+    db <- open (pack outFileName)
 
     -- Create a new table
-    -- execute conn 
-    --         "CREATE TABLE ? (?)" 
-    --         (tableName, intercalate ", " fields)
+    exec db (pack createStatement)
 
-    -- Load contents of CSV file into table
-    -- stmt <- prepare conn insertStatement
-    -- executeMany stmt 
-    --             (tail (filter (\record -> nFieldsInFile == length record) sqlRecords))
+    statement <- prepare db (pack prepareInsertStatement)
 
-    -- -- Commit changes
-    -- commit conn
-      
+    -- print $ last records'
+
+    result <- bind statement $ convertRecordToSQLData (last records') fields
+
+    -- -- Load contents of CSV file into table
+    -- let insertStatements = 
+    --       intercalate ";" $
+    --         take 1 $
+    --           fmap (csvRecordToInsertStatement tableName) $
+    --             tail records
+
+    -- exec db (pack insertStatements)
+    
     -- -- Close the connection
-    -- disconnect conn
+    -- close db
 
     -- -- Report that we were successful
-    -- putStrLn "Successful"
-
-    undefined
-
+    putStrLn "Successful"
   else
     putStrLn "The number of input fields differ from the csv file."
 
   where
-    nFieldsInFile = length $ head records
+    nFieldsInFile = length $ head records'
     nFieldsInFields = length fields
 
-    createTable = 
-      SQLCreateTable $ Table "oneWeek" tableColumns []
-        where 
-          makeColumn field =
-            let list = words field
-                name = head list
-                type' = last list
+    createStatement = 
+      "CREATE TABLE " ++ tableName ++ " (" ++ 
+      (intercalate ", " fields) ++ ")"
 
-             in Column name type' []
+    prepareInsertStatement =
+      "INSERT INTO " ++ tableName ++ " (" ++
+      (intercalate ", " fieldWithoutTypes) ++ ")" ++ " VALUES (" ++
+      (intercalate ", " (replicate nFieldsInFields "?")) ++ ")"
+        where fieldWithoutTypes = 
+                fmap (head . words) fields
 
-          tableColumns = fmap makeColumn fields
+    records' = filter (/= [""]) records
 
-    -- insertStatement =
-    --   "INSERT INTO " ++
-    --   tableName ++ " VALUES (" ++
-    --   (intercalate ", " (replicate nFieldsInFile "?")) ++ ")""?" ++
-    --   ")"
+convertRecordToSQLData :: Record -> [String] -> [SQLData]
+convertRecordToSQLData record fields =
+  fmap convertTypeToSQLData zipped
+    where 
+      types = fmap (last . words) fields
+      zipped = zip types record
 
-    -- sqlRecords = 
-    --   fmap (\record ->
-    --     fmap (\element -> toSql element) record)  records
+convertTypeToSQLData :: (String, String) -> SQLData
+convertTypeToSQLData ("TEXT", field) = SQLText . pack $ field
+convertTypeToSQLData ("REAL", field) = 
+  case readMaybe field of
+    Just real -> SQLFloat real
+    Nothing   -> SQLNull
+convertTypeToSQLData ("INTEGER", field) = 
+  case readMaybe field of
+    Just real -> SQLInteger real
+    Nothing   -> SQLNull
 
-     
 average :: (Fractional a, Real b) => [b] -> a
 average xs = realToFrac (sum xs) / fromIntegral (length xs)
