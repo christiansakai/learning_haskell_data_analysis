@@ -19,39 +19,21 @@ import Text.Read (readMaybe)
 import Control.Monad (forever)
 import Data.Foldable (all)
 
--- readIntegerColumn :: [[SqlValue]] -> Integer -> [Integer]
--- readIntegerColumn sqlResult index =
---   fmap 
---   (\row -> fromSql $ genericIndex row index :: Integer) 
---   sqlResult
+main :: IO ()
+main = do
+  aapl <- pullStockClosingPrices "aapl.sql" "aapl"
+  print aapl
 
--- readDoubleColumn :: [[SqlValue]] -> Integer -> [Double]
--- readDoubleColumn sqlResult index = 
---   fmap 
---   (\row -> fromSql $ genericIndex row index :: Double)
---   sqlResult
+pullStockClosingPrices :: FilePath
+                       -> String
+                       -> IO [(Double, Double)]
+pullStockClosingPrices databaseFile tableName = do
+  result <- queryDatabase
+    databaseFile ("SELECT rowId, adjclose FROM " ++ tableName)
 
--- readStringColumn :: [[SqlValue]] -> Integer -> [String]
--- readStringColumn sqlResult index =
---   fmap
---   (\row -> fromSql $ genericIndex row index :: String)
---   sqlResult
-
--- queryDatabase :: FilePath -> String -> IO [[SqlValue]]
--- queryDatabase databaseFile sqlQuery = do
---   conn <- connectSqlite3 databaseFile
---   let result = quickQuery' conn sqlQuery []
---   disconnect conn
---   result
-
--- pullStockClosingPrices :: String -> String -> IO [(Double, Double)]
--- pullStockClosingPrices databaseFile database = do
---   sqlResult <- queryDatabase 
---     databaseFile ("SELECT rowid, adjclose FROM " ++ database)
-
---   return $ zip
---     (reverse $ readDoubleColumn sqlResult 0)
---     (readDoubleColumn sqlResult 1)
+  return $ zip
+    (reverse $ readDoubleColumn result 0)
+    (readDoubleColumn result 1)
 
 queryDatabase :: FilePath -> String -> IO [[SQLData]]
 queryDatabase databaseFile query = do
@@ -68,7 +50,7 @@ queryDatabase databaseFile query = do
         else do
           -- subResult :: [SQLData]
           subResult <- queryRecursive 
-          return $ [result, concat subResult]
+          return $ [result] ++ subResult
 
   result <- queryRecursive
 
@@ -80,10 +62,45 @@ queryDatabase databaseFile query = do
   where
     isEndOfQuery result = all (== SQLNull) result
 
+readIntegerColumn :: [[SQLData]] -> Integer -> [Integer]
+readIntegerColumn sqlData index =
+  fmap 
+  (\row ->
+    let cell = genericIndex row index
+     in case cell of
+          SQLInteger int -> fromIntegral int
+          _ -> 0
+  ) 
+  sqlData
+
+readDoubleColumn :: [[SQLData]] -> Integer -> [Double]
+readDoubleColumn sqlData index = 
+  fmap 
+  (\row -> 
+    let cell = genericIndex row index
+     in case cell of 
+          SQLFloat float -> float
+          _ -> 0.0
+  )
+  sqlData
+
+readStringColumn :: [[SQLData]] -> Integer -> [String]
+readStringColumn sqlData index =
+  fmap
+  (\row -> 
+    let cell = genericIndex row index
+     in case cell of
+          SQLText text -> (unpack text)
+          SQLNull -> ""
+  )
+  sqlData
 
 
 
 
+
+-- Functions below this line
+-- is to put the data into SQLite3
 
 runConvertAAPL :: IO ()
 runConvertAAPL =
