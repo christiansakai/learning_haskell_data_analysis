@@ -19,7 +19,8 @@ import Debug.Trace
 
 main :: IO ()
 main = do
-  undefined
+  runConversion
+  checkSQL
 
 runConversion :: IO ()
 runConversion = 
@@ -52,17 +53,10 @@ runConversion =
             , "magSource TEXT"
             ]
 
--- checkSQL :: IO ()
--- checkSQL = do
---   conn <- connectSqlite3 "earthquakes.sql"
---   magnitudes <- quickQuery' conn "SELECT mag FROM oneWeek" []
---   putStrLn $ fromSql $ head $ head magnitudes :: Double
-
---   let magnitudesDouble = 
---         map (\record ->
---               fromSql $ head record :: Double) magnitues
-
---   putStrLn $ average magnitudesDouble
+checkSQL :: IO ()
+checkSQL = do
+  db <- open (pack "earthquakes.sql")
+  execPrint db (pack "SELECT mag FROM oneWeek")
 
 -- Converts a CSV file to an SQL database file
 -- Prints "Successful" if successful,
