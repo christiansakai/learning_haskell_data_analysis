@@ -22,7 +22,10 @@ import Data.Foldable (all)
 main :: IO ()
 main = do
   aapl <- pullStockClosingPrices "aapl.sql" "aapl"
-  print aapl
+  plot (PNG "aapl.png") $ 
+    Data2D [Title "AAPL", Style Lines] [] $ aapl
+
+  putStrLn "Done"
 
 pullStockClosingPrices :: FilePath
                        -> String
@@ -80,6 +83,7 @@ readDoubleColumn sqlData index =
     let cell = genericIndex row index
      in case cell of 
           SQLFloat float -> float
+          SQLInteger int -> fromIntegral int
           _ -> 0.0
   )
   sqlData
@@ -91,7 +95,7 @@ readStringColumn sqlData index =
     let cell = genericIndex row index
      in case cell of
           SQLText text -> (unpack text)
-          SQLNull -> ""
+          _ -> ""
   )
   sqlData
 
@@ -101,6 +105,7 @@ readStringColumn sqlData index =
 
 -- Functions below this line
 -- is to put the data into SQLite3
+
 
 runConvertAAPL :: IO ()
 runConvertAAPL =
