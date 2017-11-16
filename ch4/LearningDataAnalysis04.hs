@@ -3,75 +3,111 @@
    exec ghci
    --resolver lts-9.3 
    --package csv
+   --package easyplot
    --package text
    --package direct-sqlite
 -}
 
-module CSVToSQLite where
+module LearningDataAnalysis04 where
 
+import Data.List
+import Graphics.EasyPlot
 import Text.CSV
 import Database.SQLite3
 import Data.Text (pack, unpack)
-import Data.List (intercalate)
 import Text.Read (readMaybe)
+import Control.Monad (forever)
+import Data.Foldable (all)
 
-import Debug.Trace
+-- readIntegerColumn :: [[SqlValue]] -> Integer -> [Integer]
+-- readIntegerColumn sqlResult index =
+--   fmap 
+--   (\row -> fromSql $ genericIndex row index :: Integer) 
+--   sqlResult
 
-main :: IO ()
-main = do
-  runConversion
-  checkSQL
+-- readDoubleColumn :: [[SqlValue]] -> Integer -> [Double]
+-- readDoubleColumn sqlResult index = 
+--   fmap 
+--   (\row -> fromSql $ genericIndex row index :: Double)
+--   sqlResult
 
-runConversion :: IO ()
-runConversion = 
-  convertCSVFileToSQL inFileName outFileName tableName fields
-    where inFileName  = "all_week.csv"
-          outFileName = "earthquakes.sql"
-          tableName   = "oneWeek"
-          fields      =
-            [ "time TEXT"
-            , "latitude REAL"
-            , "longitude REAL"
-            , "depth REAL"
-            , "mag REAL"
-            , "magType TEXT"
-            , "nst INTEGER"
-            , "gap REAL"
-            , "dmin REAL"
-            , "rms REAL"
-            , "net REAL"
-            , "id TEXT"
-            , "updated TEXT"
-            , "place TEXT"
-            , "type TEXT"
-            , "horizontalError REAL"
-            , "depthError REAL"
-            , "magError REAL"
-            , "magNst INTEGER"
-            , "status TEXT"
-            , "locationSource TEXT"
-            , "magSource TEXT"
-            ]
+-- readStringColumn :: [[SqlValue]] -> Integer -> [String]
+-- readStringColumn sqlResult index =
+--   fmap
+--   (\row -> fromSql $ genericIndex row index :: String)
+--   sqlResult
 
-checkSQL :: IO ()
-checkSQL = do
-  db <- open (pack "earthquakes.sql")
-  execPrint db (pack "SELECT mag FROM oneWeek")
+-- queryDatabase :: FilePath -> String -> IO [[SqlValue]]
+-- queryDatabase databaseFile sqlQuery = do
+--   conn <- connectSqlite3 databaseFile
+--   let result = quickQuery' conn sqlQuery []
+--   disconnect conn
+--   result
 
--- Converts a CSV file to an SQL database file
--- Prints "Successful" if successful,
--- error message otherwise.
+-- pullStockClosingPrices :: String -> String -> IO [(Double, Double)]
+-- pullStockClosingPrices databaseFile database = do
+--   sqlResult <- queryDatabase 
+--     databaseFile ("SELECT rowid, adjclose FROM " ++ database)
+
+--   return $ zip
+--     (reverse $ readDoubleColumn sqlResult 0)
+--     (readDoubleColumn sqlResult 1)
+
+queryDatabase :: FilePath -> String -> IO [[SQLData]]
+queryDatabase databaseFile query = do
+  db <- open (pack databaseFile)
+  statement <- prepare db (pack query)
+
+  let queryRecursive :: IO [[SQLData]]
+      queryRecursive = do
+        step statement
+        -- result :: [SQLData]
+        result <- columns statement
+        if isEndOfQuery result then
+          return []
+        else do
+          -- subResult :: [SQLData]
+          subResult <- queryRecursive 
+          return $ [result, concat subResult]
+
+  result <- queryRecursive
+
+  finalize statement
+  close db
+
+  return result
+
+  where
+    isEndOfQuery result = all (== SQLNull) result
+
+
+
+
+
+
+runConvertAAPL :: IO ()
+runConvertAAPL =
+  convertCSVFileToSQL 
+    "aapl.csv"
+    "aapl.sql"
+    "aapl"
+    [ "date STRING"
+    , "open REAL"
+    , "high REAL"
+    , "low REAL"
+    , "close REAL"
+    , "volume REAL"
+    , "adjclose REAL"
+    ]
+
 convertCSVFileToSQL :: String
                     -> String
                     -> String
                     -> [String]
                     -> IO ()
 convertCSVFileToSQL inFileName outFileName tableName fields = do
-  -- Open and read the CSV file
   input <- readFile inFileName
   let records = parseCSV inFileName input
-  
-  -- Check to make sure this is a good CSV file
   either handleCSVError convertTool records
   where 
     convertTool = 
@@ -80,29 +116,19 @@ convertCSVFileToSQL inFileName outFileName tableName fields = do
     handleCSVError csv = 
       putStrLn "This does not appear to be a CSV file."
 
-
--- Converts a CSV expression into an SQL database
--- Returns "Successful" if successful,
--- error message otherwise.
 convertCSVToSQL :: String
                 -> String
                 -> [String]
                 -> CSV
                 -> IO ()
 convertCSVToSQL tableName outFileName fields records =
-  -- Check to make sure that the number of columns
-  -- matches the number of fields
   if nFieldsInFile == nFieldsInFields then do
-    -- Open a connection
     db <- open (pack outFileName)
 
-    -- Create a new table
     exec db (pack createStatement)
 
-    -- Load contents of CSV file into table
     let performMultiple =
           fmap (\rec -> do
-            -- Is there must be a better way to do this
             statement <- prepare db (pack prepareInsertStatement)
             bind statement $ convertRecordToSQLData rec fields
             step statement
@@ -110,10 +136,7 @@ convertCSVToSQL tableName outFileName fields records =
           ) records'
 
     sequence_ performMultiple
-
     close db
-
-    -- Report that we were successful
     putStrLn "Successful"
   else
     putStrLn "The number of input fields differ from the csv file."
@@ -143,6 +166,7 @@ convertRecordToSQLData record fields =
       zipped = zip types record
 
 convertTypeToSQLData :: (String, String) -> SQLData
+convertTypeToSQLData ("STRING", field) = SQLText . pack $ field
 convertTypeToSQLData ("TEXT", field) = SQLText . pack $ field
 convertTypeToSQLData ("REAL", field) = 
   case readMaybe field of
@@ -152,6 +176,3 @@ convertTypeToSQLData ("INTEGER", field) =
   case readMaybe field of
     Just real -> SQLInteger real
     Nothing   -> SQLNull
-
-average :: (Fractional a, Real b) => [b] -> a
-average xs = realToFrac (sum xs) / fromIntegral (length xs)
