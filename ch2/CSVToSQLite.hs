@@ -105,25 +105,21 @@ convertCSVToSQL tableName outFileName fields records =
     -- Create a new table
     exec db (pack createStatement)
 
-    statement <- prepare db (pack prepareInsertStatement)
+    -- Load contents of CSV file into table
+    let performMultiple =
+          fmap (\rec -> do
+            -- Is there must be a better way to do this
+            statement <- prepare db (pack prepareInsertStatement)
+            bind statement $ convertRecordToSQLData rec fields
+            step statement
+            finalize statement
+          ) records'
 
-    -- print $ last records'
+    sequence_ performMultiple
 
-    result <- bind statement $ convertRecordToSQLData (last records') fields
+    close db
 
-    -- -- Load contents of CSV file into table
-    -- let insertStatements = 
-    --       intercalate ";" $
-    --         take 1 $
-    --           fmap (csvRecordToInsertStatement tableName) $
-    --             tail records
-
-    -- exec db (pack insertStatements)
-    
-    -- -- Close the connection
-    -- close db
-
-    -- -- Report that we were successful
+    -- Report that we were successful
     putStrLn "Successful"
   else
     putStrLn "The number of input fields differ from the csv file."
