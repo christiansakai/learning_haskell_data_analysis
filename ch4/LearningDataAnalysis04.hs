@@ -7,7 +7,6 @@
    --package text
    --package direct-sqlite
 -}
-
 module LearningDataAnalysis04 where
 
 import Data.List
@@ -21,11 +20,212 @@ import Data.Foldable (all)
 
 main :: IO ()
 main = do
+  putStrLn "Done"
+
+plotEarthquake :: IO Bool
+plotEarthquake = do
+  coords <- pullLatituteLongitude "earthquakes.sql" "oneMonth"
+  plot (PNG "earthquakes.png")
+    [ Data2D
+      [ Title "Earthquakes"
+      , Color Red
+      , Style Dots
+      ]
+      []
+      coords
+    ]
+
+pullLatituteLongitude :: String -> String -> IO [(Double, Double)]
+pullLatituteLongitude databaseFile tableName = do
+  result <- queryDatabase
+    databaseFile ("SELECT latitude, longitude FROM " ++ tableName)
+
+  return $ zip
+    (readDoubleColumn result 1)
+    (readDoubleColumn result 0)
+
+runConvertEarthquake :: IO ()
+runConvertEarthquake =
+  convertCSVFileToSQL 
+    "all_month.csv" 
+    "earthquakes.sql" 
+    "oneMonth"
+    [ "time TEXT"
+    , "latitude REAL"
+    , "longitude REAL"
+    , "depth REAL"
+    , "mag REAL"
+    , "magType TEXT"
+    , "nst INTEGER"
+    , "gap REAL"
+    , "dmin REAL"
+    , "rms REAL"
+    , "net REAL"
+    , "id TEXT"
+    , "updated TEXT"
+    , "place TEXT"
+    , "type TEXT"
+    , "horizontalError REAL"
+    , "depthError REAL"
+    , "magError REAL"
+    , "magNst INTEGER"
+    , "status TEXT"
+    , "locationSource TEXT"
+    , "magSource TEXT"
+    ]
+
+plotAppleMovingAverage :: IO Bool
+plotAppleMovingAverage = do
+  aapl <- pullStockClosingPrices "aapl.sql" "aapl"
+  let aapl252 = take 252 aapl
+      aapl252Pc = applyPercentChangeToData aapl252
+      aapl252Ma20 = applyMovingAverageToData aapl252Pc 20
+
+  plot (PNG "aapl_20dayma.png") $ 
+    [ Data2D 
+      [ Title "AAPL - One Year, % Change"
+      , Style Lines
+      , Color Red
+      ]
+      []
+      aapl252Pc
+    , Data2D
+      [ Title "AAPL 20-Day M"
+      , Style Lines
+      , Color Black
+      ]
+      []
+      aapl252Ma20
+    ]
+
+applyMovingAverageToData :: [(Double, Double)] 
+                         -> Integer
+                         -> [(Double, Double)]
+applyMovingAverageToData dataset window =
+  zip [(fromIntegral window)..] 
+      (movingAverage (fmap snd (reverse dataset)) window)
+
+movingAverage :: [Double] -> Integer -> [Double]
+movingAverage values window
+  | window >= genericLength values = [average values]
+  | otherwise =
+    let headValues = genericTake window values
+        tailAverages = movingAverage (tail values) window
+     in (average headValues) : tailAverages
+
+average :: (Fractional a, Real b) => [b] -> a
+average xs = realToFrac (sum xs) / fromIntegral (length xs)
+
+plotAppleMicrosoftGoogle :: IO Bool
+plotAppleMicrosoftGoogle = do
+  aapl <- pullStockClosingPrices "aapl.sql" "aapl"
+  let aapl252 = take 252 aapl
+      aapl252Pc = applyPercentChangeToData aapl252
+
+  googl <- pullStockClosingPrices "googl.sql" "googl"
+  let googl252 = take 252 googl
+      googl252Pc = applyPercentChangeToData googl252
+
+  msft <- pullStockClosingPrices "msft.sql" "msft"
+  let msft252 = take 252 msft
+      msft252Pc = applyPercentChangeToData msft252
+
+  plot (PNG "aapl_googl_msft_pc.png") $ 
+    [ Data2D 
+      [ Title "AAPL - One Year, % Change"
+      , Style Lines
+      , Color Red
+      ]
+      []
+      aapl252Pc
+    , Data2D
+      [ Title "GOOGL - One Year, % Change"
+      , Style Lines
+      , Color Blue
+      ]
+      []
+      googl252Pc
+    , Data2D
+      [ Title "MSFT - One Year, % Change"
+      , Style Lines
+      , Color Green
+      ]
+      []
+      msft252Pc
+    ]
+
+runConvertGoogle :: IO ()
+runConvertGoogle =
+  convertCSVFileToSQL 
+    "googl.csv" 
+    "googl.sql" 
+    "googl"
+    [ "date STRING"
+    , "open REAL"
+    , "high REAL"
+    , "low REAL"
+    , "close REAL"
+    , "volume REAL"
+    , "adjclose REAL"
+    ]
+
+runConvertMicrosoft :: IO ()
+runConvertMicrosoft = 
+  convertCSVFileToSQL
+    "msft.csv"
+    "msft.sql"
+    "msft"
+    [ "date STRING"
+    , "open REAL"
+    , "high REAL"
+    , "low REAL"
+    , "close REAL"
+    , "volume REAL"
+    , "adjclose REAL"
+    ]
+
+
+plotPercentChange :: IO Bool
+plotPercentChange = do
+  aapl <- pullStockClosingPrices "aapl.sql" "aapl"
+
+  let aapl252 = take 252 aapl
+      aapl252Pc = applyPercentChangeToData aapl252
+
+  plot (PNG "aapl_oneyear_pc.png") $ 
+    Data2D [Title "AAPL - One Year, % Change", Style Lines] [] $ aapl252Pc
+
+applyPercentChangeToData :: [(Double, Double)]
+                         -> [(Double, Double)]
+applyPercentChangeToData dataset =
+  zip indices scaledData
+    where 
+      (_, first) = last dataset
+      indices = reverse [1.0..(genericLength dataset)]
+      scaledData =
+        fmap (\(_, value) -> percentChange value first) dataset
+
+percentChange :: Double -> Double -> Double
+percentChange value first =
+  100.0 * (value - first) / first
+
+plotLastYearLine :: IO Bool
+plotLastYearLine = do
+  aapl <- pullStockClosingPrices "aapl.sql" "aapl"
+  plot (PNG "aapl_oneyear.png") $ 
+    Data2D [Title "AAPL", Style Lines] [] $ take 252 aapl
+
+plotStandard :: IO Bool
+plotStandard = do
   aapl <- pullStockClosingPrices "aapl.sql" "aapl"
   plot (PNG "aapl.png") $ 
-    Data2D [Title "AAPL", Style Lines] [] $ aapl
+    Data2D [Title "AAPL"] [] $ aapl
 
-  putStrLn "Done"
+plotLine :: IO Bool
+plotLine = do
+  aapl <- pullStockClosingPrices "aapl.sql" "aapl"
+  plot (PNG "aapl_line.png") $ 
+    Data2D [Title "AAPL", Style Lines] [] $ aapl
 
 pullStockClosingPrices :: FilePath
                        -> String
